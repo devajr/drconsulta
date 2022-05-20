@@ -1,41 +1,63 @@
-FROM alpine:3.13
+FROM alpine:3.14
 
-# for laravel lumen run smoothly
+# Install packages and remove default server definition
 RUN apk --no-cache add \
-php8 \
-php8-fpm \
-php8-pdo \
-php8-mbstring \
-php8-openssl
+  curl \
+  nginx \
+  php8 \
+  php8-ctype \
+  php8-curl \
+  php8-dom \
+  php8-fpm \
+  php8-gd \
+  php8-intl \
+  php8-json \
+  php8-mbstring \
+  php8-mysqli \
+  php8-opcache \
+  php8-openssl \
+  php8-phar \
+  php8-session \
+  php8-xml \
+  php8-xmlreader \
+  php8-zlib \
+  php8-redis \
+  php8-xmlwriter \
+  php8-tokenizer \
+  php8-pdo \
+  php8-pdo_mysql \
+  supervisor
 
-# for our code run smoothly
-RUN apk --no-chace add \
-php8-json \
-php8-dom \
-curl \
-php8-curl
+# Create symlink so programs depending on `php` still function
+RUN ln -s /usr/bin/php8 /usr/bin/php
 
-# for swagger run smoothly
-RUN apk --no-cache add \
-php8-tokenizer
+# Add composer
+RUN curl -sS https://getcomposer.org/installer | php && \
+    chmod +x composer.phar && \
+    mv composer.phar /usr/local/bin/composer
 
-# for composer & our project depency run smoothly
-RUN apk --no-cache add \
-php8-phar \
-php8-xml \
-php8-xmlwriter
+# Configure nginx
+COPY container/nginx.conf /etc/nginx/nginx.conf
 
-# if need composer to update plugin / vendor used
-RUN php8 -r "copy('http://getcomposer.org/installer', 'composer-setup.php');" && \
-php8 composer-setup.php --install-dir=/usr/bin --filename=composer && \
-php8 -r "unlink('composer-setup.php');"
+# Configure PHP-FPM
+COPY container/fpm-pool.conf /etc/php8/php-fpm.d/www.conf
+COPY container/php.ini /etc/php8/conf.d/custom.ini
 
-# copy all of the file in folder to /src
-COPY . /src
-WORKDIR /src
+# Configure supervisord and entrypoint
+COPY container/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY container/entrypoint.sh /entrypoint.sh
 
-RUN composer update
+# Add application
+WORKDIR /var/www
+COPY src/ /var/www/
 
-# run the php server service
-# move this command to -> docker-compose.yml
-# CMD php -S 0.0.0.0:8080 public/index.php
+# Install composer dependencies
+RUN composer install --prefer-dist --no-dev
+
+# Expose the port nginx is reachable on
+EXPOSE 80
+
+# Entrypoint script starts supervisord
+# Use it for any processing during container launch
+# Example generate .env file from a secrets manager
+ENTRYPOINT ["/entrypoint.sh"]
