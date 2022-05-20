@@ -1,115 +1,41 @@
-FROM php:8.0-fpm-alpine AS build
+FROM alpine:3.13
 
-LABEL mantainer="developer@fabriziocafolla.com"
-LABEL description="Production container"
+# for laravel lumen run smoothly
+RUN apk --no-cache add \
+php7 \
+php7-fpm \
+php7-pdo \
+php7-mbstring \
+php7-openssl
 
-ARG ENV
-ARG APPNAME
-ARG DOMAIN 
-ARG WORKDIR_USER="www-data"
-ARG WORKDIR_GROUP="www-data"
-ARG WORKDIRPATH="/var/www"
+# for our code run smoothly
+RUN apk --no-chace add \
+php7-json \
+php7-dom \
+curl \
+php7-curl
 
-RUN test -n "${ENV}" || (echo "[BUILD ARG] ENV not set" && false) && \
-    test -n "${APPNAME}" || (echo "[BUILD ARG] APPNAME not set" && false) && \
-    test -n "${DOMAIN}" || (echo "[BUILD ARG] DOMAIN not set" && false)
+# for swagger run smoothly
+RUN apk --no-cache add \
+php7-tokenizer
 
-ENV build_deps \
-		autoconf \
-        libzip-dev \
-        curl-dev \
-        oniguruma-dev \
-        zlib-dev
+# for composer & our project depency run smoothly
+RUN apk --no-cache add \
+php7-phar \
+php7-xml \
+php7-xmlwriter
 
-ENV persistent_deps \
-		build-base \
-        git \
-		unzip \
-        curl \
-        g++ \
-        gcc \
-        make \
-        rsync \
-        openssl \
-        acl \
-        openrc \
-        bash \
-        libzip \
-        zlib 
+# if need composer to update plugin / vendor used
+RUN php7 -r "copy('http://getcomposer.org/installer', 'composer-setup.php');" && \
+php7 composer-setup.php --install-dir=/usr/bin --filename=composer && \
+php7 -r "unlink('composer-setup.php');"
 
-# Set working directory as
-WORKDIR ${WORKDIRPATH}
+# copy all of the file in folder to /src
+COPY . /src
+WORKDIR /src
 
-# Install build dependencies
-RUN apk upgrade --update-cache --available && apk update && \
-    apk add --no-cache --virtual .build-dependencies $build_deps
+RUN composer update
 
-# Install persistent dependencies
-RUN apk add --update --no-cache --virtual .persistent-dependencies $persistent_deps && \
-    curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
-
-# Install docker ext and remove build deps
-RUN apk update \
-    && docker-php-ext-configure zip \
-    && docker-php-ext-install mysqli \
-        pdo \
-        pdo_mysql \
-        bcmath \
-        curl \
-        pcntl \
-        zip \
-        exif \
-    && apk del -f .build-dependencies
-
-# Install nginx webserver
-ARG NGINX_VERSION="1.20.1-r3"
-RUN apk add --update --no-cache nginx==$NGINX_VERSION
-
-COPY ./container/etc/nginx /etc/nginx
-COPY ./container/etc/php /usr/local/etc
-COPY ./container/sbin /usr/local/sbin
-
-ENV ENV ${ENV}
-ENV APPNAME ${APPNAME}
-ENV DOMAIN ${DOMAIN}
-ENV WORKDIR_USER ${WORKDIR_USER}
-ENV WORKDIR_GROUP ${WORKDIR_GROUP}
-ENV WORKDIRPATH ${WORKDIRPATH}
-ENV NGINX_VERSION ${NGINX_VERSION}
-
-RUN chmod 777 -R /usr/local/sbin \
-    && /usr/local/sbin/nginx_config \
-    && /usr/local/sbin/nginx_certificate 
-
-ENTRYPOINT ["/usr/local/sbin/entrypoint"]
-
-# Dev
-FROM build as dev
-
-USER root
-
-RUN apk update && apk upgrade && \
-    apk add mysql-client    
-
-# Build app
-FROM build as app
-
-COPY --chown=${WORKDIR_USER}:${WORKDIR_GROUP} ./source ${WORKDIRPATH}
-
-RUN composer install --no-dev --no-scripts --no-suggest --no-interaction --prefer-dist --optimize-autoloader \
-    && composer dump-autoload --no-dev --optimize --classmap-authoritative \
-    && chown -R ${WORKDIR_USER}:${WORKDIR_GROUP} /run \
-    && chown -R ${WORKDIR_USER}:${WORKDIR_GROUP} ${WORKDIRPATH}/* \
-    && chown -R ${WORKDIR_USER}:${WORKDIR_GROUP} ${WORKDIRPATH}/.* \
-    && find ${WORKDIRPATH} -type f -exec chmod 644 {} \; \
-    && find ${WORKDIRPATH} -type d -exec chmod 775 {} \;
-
-# Production
-FROM build as pro
-COPY --from=app ${WORKDIRPATH} ${WORKDIRPATH}
-USER ${WORKDIR_USER}
-
-# Staging
-FROM build as sta
-COPY --from=app ${WORKDIRPATH} ${WORKDIRPATH}
-USER ${WORKDIR_USER}
+# run the php server service
+# move this command to -> docker-compose.yml
+# CMD php -S 0.0.0.0:8080 public/index.php
