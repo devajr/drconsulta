@@ -32,27 +32,17 @@ RUN apk --no-cache add \
 RUN ln -s /usr/bin/php8 /usr/bin/php
 
 # Add composer
-RUN curl -sS https://getcomposer.org/installer | php && \
-    chmod +x composer.phar && \
-    mv composer.phar /usr/local/bin/composer
+RUN php -r "readfile('http://getcomposer.org/installer');" | php -- --install-dir=/usr/bin/ --filename=composer
+
 
 # Configure nginx
-COPY container/nginx.conf /etc/nginx/nginx.conf
 
-# Configure PHP-FPM
-COPY container/fpm-pool.conf /etc/php8/php-fpm.d/www.conf
-COPY container/php.ini /etc/php8/conf.d/custom.ini
-
-# Configure supervisord and entrypoint
-COPY container/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-COPY container/entrypoint.sh /entrypoint.sh
 
 # Add application
-WORKDIR /var/www
-COPY src/ /var/www/
+WORKDIR /var/www/html/
 
 # Install composer dependencies
-RUN composer install --prefer-dist --no-dev
+RUN composer install
 
 # Expose the port nginx is reachable on
 EXPOSE 80
@@ -60,4 +50,3 @@ EXPOSE 80
 # Entrypoint script starts supervisord
 # Use it for any processing during container launch
 # Example generate .env file from a secrets manager
-ENTRYPOINT ["/entrypoint.sh"]
