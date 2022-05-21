@@ -1,52 +1,55 @@
-FROM alpine:3.14
+FROM php:8.0-fpm
 
-# Install packages and remove default server definition
-RUN apk --no-cache add \
-  curl \
-  nginx \
-  php8 \
-  php8-ctype \
-  php8-curl \
-  php8-dom \
-  php8-fpm \
-  php8-gd \
-  php8-intl \
-  php8-json \
-  php8-mbstring \
-  php8-mysqli \
-  php8-opcache \
-  php8-openssl \
-  php8-phar \
-  php8-session \
-  php8-xml \
-  php8-xmlreader \
-  php8-zlib \
-  php8-redis \
-  php8-xmlwriter \
-  php8-tokenizer \
-  php8-pdo \
-  php8-pdo_mysql \
-  supervisor
+# Copy composer.lock and composer.json
+COPY composer.lock composer.json /var/www/
 
-# Create symlink so programs depending on `php` still function
-RUN ln -s /usr/bin/php8 /usr/bin/php
+# Set working directory
+WORKDIR /var/www
 
-# Add composer
-RUN php -r "readfile('http://getcomposer.org/installer');" | php -- --install-dir=/usr/bin/ --filename=composer
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    default-mysql-client \
+    libpng-dev \
+    libjpeg62-turbo-dev \
+    libfreetype6-dev \
+    locales \
+    zip \
+    libzip-dev \
+    jpegoptim optipng pngquant gifsicle \
+    vim \
+    unzip \
+    git \
+    curl
+
+# Clear cache
+RUN apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install extensions
+RUN docker-php-ext-install pdo_mysql zip exif pcntl
 
 
-# Configure nginx
+# Install composer
+RUN curl -sS https://getcomposer.org/installer | php -- --install=/usr/local/bin --filename=composer
 
+# Add user for laravel application
+RUN groupadd -g 1000 www
+RUN useradd -u 1000 -ms /bin/bash -g www www
 
-# Add application
-WORKDIR /var/www/html/
+# Install nvm
+RUN curl -sL https://raw.githubusercontent.com/creationix/nvm/v0.33.11/install.sh -o install_nvm.sh
 
-# Install composer dependencies
-RUN composer install
+RUN bash install_nvm.sh
 
-# Expose the port nginx is reachable on
-EXPOSE 80
+# Copy existing application directory contents
+COPY . /var/www
 
-# Entrypoint script starts supervisord
-# Use it for any processing during container launch
-# Example generate .env file from a secrets manager
+# Copy existing application directory permissions
+COPY --chown=www:www . /var/www
+
+# Change current user to www
+USER www
+
+# Expose port 9000 and start php-fpm server
+EXPOSE 9000
+CMD ["php-fpm"]

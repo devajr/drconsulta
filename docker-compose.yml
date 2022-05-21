@@ -1,27 +1,81 @@
-version: "3.5"
-
+version: '3'
 services:
-  lumen:
-    ports:
-      - "8000:8000"
-    volumes:
-      - .:/var/www/html
-      - /var/www/html/vendor/
-    build: .
-    command: php -S lumen:8000 -t public
-    restart: always
-    depends_on:
-      - db
-  db:
-    image: mysql:8.0
-    restart: always
+
+  #PHP Service
+  app_challenge_devair:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: digitalocean.com/php
+    container_name: app_challenge_devair
+    restart: unless-stopped
+    tty: true
     environment:
-      MYSQL_DATABASE: ${DB_DATABASE}
-      MYSQL_USER: ${DB_USERNAME}
-      MYSQL_PASSWORD: ${DB_PASSWORD}
-      MYSQL_ROOT_PASSWORD: root
-    command: mysqld --default-authentication-plugin=mysql_native_password
+      SERVICE_NAME: app
+      SERVICE_TAGS: dev
+    working_dir: /var/www
     volumes:
-      - ./database/mysql-data:/var/lib/mysql:rw
+       - ./:/var/www
+       - ./docker/php/local.ini:/usr/local/etc/php/conf.d/local.ini
+    networks:
+      - way-network
+
+  #Nginx Service
+  webserver_challenge_devair:
+    image: nginx:alpine
+    container_name: webserver_challenge_devair
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "8080:80"
+      - "443:443"
+    volumes:
+      - ./:/var/www
+      - ./docker/nginx/conf.d/:/etc/nginx/conf.d/
+    networks:
+      - way-network
+
+   #MySQL Service
+  db_challenge_devair:
+    image: mariadb
+    container_name: db_challenge_devair
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_DATABASE: challenge
+      MYSQL_ROOT_PASSWORD: root
+      SERVICE_TAGS: dev
+      SERVICE_NAME: mysql
+   # volumes:
+    #  - ./docker/dbdata:/var/lib/mysql
+    #  - ./docker/mysql/my.cnf:/etc/mysql/my.cnf
+    networks:
+      - way-network
+
+  phpmyadmi_challenge_devair:
+    image: phpmyadmin/phpmyadmin
+    container_name: phpmyadmin_challenge_devair
+    environment:
+     - PMA_ARBITRARY=1
+    restart: always
+    ports:
+     - 8081:80
+    volumes:
+     - ./docker/dbdata:/var/lib/mysql
+     - /sessions
+     - ~/docker/phpmyadmin/config.user.inc.php:/etc/phpmyadmin/config.user.inc.php
+     - ./docker/phpmyadmin/upload.ini:/usr/local/etc/php/php.ini
+    networks:
+      - way-network
+
+#Docker Networks
+networks:
+  way-network:
+    driver: bridge
+
+#Volumes
 volumes:
-  mysql-data:
+  dbdata:
+    driver: local
